@@ -14,22 +14,19 @@ import json
 
 
 
+BQ_LOCATION = "US"  # adjust to your dataset's location
 
-BQ_LOCATION = "US"  # adjust if needed
-
-if "GOOGLE_CREDENTIALS" in st.secrets:
-    info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-    # normalize private_key just in case the \n are literal
+def load_gcp_credentials_from_secrets():
+    info = dict(st.secrets["gcp_service_account"])  # TOML table -> dict
     pk = info.get("private_key", "")
+    # If the key was pasted with literal "\n", turn them into real newlines
     if "\\n" in pk and "\n" not in pk:
         info["private_key"] = pk.replace("\\n", "\n")
+    # If someone pasted an actual multi-line PEM, leave it as-is
+    return service_account.Credentials.from_service_account_info(info), info["project_id"]
 
-    creds = service_account.Credentials.from_service_account_info(info)
-    bq = bigquery.Client(project=info["project_id"], credentials=creds, location=BQ_LOCATION)
-else:
-    bq = bigquery.Client(project="steam-airfoil-341409", location=BQ_LOCATION)
-
-
+creds, project_id = load_gcp_credentials_from_secrets()
+bq = bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
 
 
 # =========================
