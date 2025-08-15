@@ -12,31 +12,22 @@ from google.oauth2 import service_account
 
 import json
 
-
-
-BQ_LOCATION = "US"  # set to your dataset's location, e.g. "US" or "asia-south1"
+BQ_LOCATION = "US"
 
 def load_gcp_credentials_from_secrets():
     if "gcp_service_account" not in st.secrets:
-        st.error("Missing [gcp_service_account] in Secrets (Settings → Secrets). Found keys: "
-                 f"{list(st.secrets.keys())}")
+        st.error("Missing [gcp_service_account] in Secrets. Add it in Settings → Secrets.")
         st.stop()
-
-    info = dict(st.secrets["gcp_service_account"])  # TOML table → dict
+    info = dict(st.secrets["gcp_service_account"])
     pk = info.get("private_key", "")
-    # Convert literal '\n' to real newlines if needed
     if "\\n" in pk and "\n" not in pk:
         info["private_key"] = pk.replace("\\n", "\n")
-
     creds = service_account.Credentials.from_service_account_info(info)
     return creds, info["project_id"]
 
-@st.cache_resource(show_spinner=False)
-def get_bq_client():
-    creds, project_id = load_gcp_credentials_from_secrets()
-    return bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
+creds, project_id = load_gcp_credentials_from_secrets()
+bq = bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
 
-bq = get_bq_client()
 
 # =========================
 # Project constants (edit)
