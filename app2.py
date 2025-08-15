@@ -7,6 +7,27 @@ import streamlit as st
 from google.cloud import bigquery
 from google.api_core.exceptions import BadRequest
 
+from google.oauth2 import service_account
+
+
+PROJECT = "steam-airfoil-341409"
+BQ_LOCATION = "US"  # set to your dataset’s location
+
+if "gcp_service_account" in st.secrets:
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"]
+    )
+    bq = bigquery.Client(
+        project=st.secrets["gcp_service_account"]["project_id"],
+        credentials=creds,
+        location=BQ_LOCATION,  # optional but good to set
+    )
+else:
+    # local dev with Application Default Credentials
+    bq = bigquery.Client(project=PROJECT, location=BQ_LOCATION)
+
+
+
 # =========================
 # Project constants (edit)
 # =========================
