@@ -14,20 +14,29 @@ import json
 
 
 
-BQ_LOCATION = "US"  # adjust to your dataset's location
+BQ_LOCATION = "US"  # set to your dataset's location, e.g. "US" or "asia-south1"
 
 def load_gcp_credentials_from_secrets():
-    info = dict(st.secrets["gcp_service_account"])  # TOML table -> dict
+    if "gcp_service_account" not in st.secrets:
+        st.error("Missing [gcp_service_account] in Secrets (Settings → Secrets). Found keys: "
+                 f"{list(st.secrets.keys())}")
+        st.stop()
+
+    info = dict(st.secrets["gcp_service_account"])  # TOML table → dict
     pk = info.get("private_key", "")
-    # If the key was pasted with literal "\n", turn them into real newlines
+    # Convert literal '\n' to real newlines if needed
     if "\\n" in pk and "\n" not in pk:
         info["private_key"] = pk.replace("\\n", "\n")
-    # If someone pasted an actual multi-line PEM, leave it as-is
-    return service_account.Credentials.from_service_account_info(info), info["project_id"]
 
-creds, project_id = load_gcp_credentials_from_secrets()
-bq = bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
+    creds = service_account.Credentials.from_service_account_info(info)
+    return creds, info["project_id"]
 
+@st.cache_resource(show_spinner=False)
+def get_bq_client():
+    creds, project_id = load_gcp_credentials_from_secrets()
+    return bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
+
+bq = get_bq_client()
 
 # =========================
 # Project constants (edit)
