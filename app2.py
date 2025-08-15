@@ -10,21 +10,25 @@ from google.api_core.exceptions import BadRequest
 from google.oauth2 import service_account
 
 
-PROJECT = "steam-airfoil-341409"
-BQ_LOCATION = "US"  # set to your dataset’s location
+import json
 
-if "gcp_service_account" in st.secrets:
-    creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"]
-    )
-    bq = bigquery.Client(
-        project=st.secrets["gcp_service_account"]["project_id"],
-        credentials=creds,
-        location=BQ_LOCATION,  # optional but good to set
-    )
+
+
+
+BQ_LOCATION = "US"  # adjust if needed
+
+if "GOOGLE_CREDENTIALS" in st.secrets:
+    info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+    # normalize private_key just in case the \n are literal
+    pk = info.get("private_key", "")
+    if "\\n" in pk and "\n" not in pk:
+        info["private_key"] = pk.replace("\\n", "\n")
+
+    creds = service_account.Credentials.from_service_account_info(info)
+    bq = bigquery.Client(project=info["project_id"], credentials=creds, location=BQ_LOCATION)
 else:
-    # local dev with Application Default Credentials
-    bq = bigquery.Client(project=PROJECT, location=BQ_LOCATION)
+    bq = bigquery.Client(project="steam-airfoil-341409", location=BQ_LOCATION)
+
 
 
 
