@@ -54,7 +54,7 @@ ALLOWED_DATASETS = {DATASET}
 os.environ.setdefault("GCLOUD_PROJECT", PROJECT)
 
 # BigQuery client
-bq = bigquery.Client(project=PROJECT)
+#bq = bigquery.Client(project=PROJECT)
 
 st.set_page_config(page_title="Traffic Data NL → SQL (BigQuery + Gemini)", layout="wide")
 st.title("Ask your Traffic Data (Gemini → SQL → BigQuery)")
