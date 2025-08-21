@@ -14,6 +14,26 @@ from google.oauth2 import service_account
 from typing import Optional, Tuple
 
 
+import json
+
+BQ_LOCATION = "US"
+
+def load_gcp_credentials_from_secrets():
+    if "gcp_service_account" not in st.secrets:
+        st.error("Missing [gcp_service_account] in Secrets. Add it in Settings → Secrets.")
+        st.stop()
+    info = dict(st.secrets["gcp_service_account"])
+    pk = info.get("private_key", "")
+    if "\\n" in pk and "\n" not in pk:
+        info["private_key"] = pk.replace("\\n", "\n")
+    creds = service_account.Credentials.from_service_account_info(info)
+    return creds, info["project_id"]
+
+creds, project_id = load_gcp_credentials_from_secrets()
+bq = bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
+
+
+
 # --- Cloud Storage config ---
 BUCKET_NAME = "my-traffic-vehicles"
 BUCKET_PREFIX = "Captured Images"   # if your images live in a folder inside the bucket, e.g. "frames/"
@@ -41,36 +61,6 @@ ALLOWED_DATASETS = {DATASET}
 
 # Optional: set default project env var (handy outside GCP)
 os.environ.setdefault("GCLOUD_PROJECT", PROJECT)
-
-# BigQuery client
-BQ_LOCATION = "US"  # keep this matching your dataset
-
-# --- load creds from Streamlit Secrets (TOML: [gcp_service_account]) ---
-def load_gcp_credentials_from_secrets():
-    if "gcp_service_account" not in st.secrets:
-        st.error("Missing [gcp_service_account] in Secrets (Settings → Secrets).")
-        st.stop()
-    info = dict(st.secrets["gcp_service_account"])
-    pk = info.get("private_key", "")
-    if "\\n" in pk and "\n" not in pk:
-        info["private_key"] = pk.replace("\\n", "\n")
-    creds = service_account.Credentials.from_service_account_info(info)
-    return creds, info["project_id"]
-
-@st.cache_resource(show_spinner=False)
-def get_clients():
-    creds, project_id = load_gcp_credentials_from_secrets()
-    bq_client = bigquery.Client(project=project_id, credentials=creds, location=BQ_LOCATION)
-    gcs_client = storage.Client(project=project_id, credentials=creds)  # ← Storage client
-    return bq_client, gcs_client
-
-
-
-# ✅ USE the secrets-based clients:
-bq, gcs = get_clients()
-
-
-
 
 st.set_page_config(page_title="Traffic Data NL → SQL (BigQuery + Gemini)", layout="wide")
 st.title("Ask your Traffic Data (Gemini → SQL → BigQuery)")
