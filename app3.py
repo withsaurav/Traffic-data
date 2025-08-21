@@ -157,42 +157,90 @@ def get_filename_for_plate(plate_number: str) -> Optional[str]:
     return str(df.iloc[0]["filename"]).strip()
 
 
+# --- CONFIG ---
+PROJECT_ID = "steam-airfoil-341409"
+BUCKET_NAME = "my-traffic-vehicles"
+FOLDER_PREFIX = "Captured Images"  # folder inside the bucket
 
-def download_image_bytes_from_gcs(filename: str) -> Tuple[Optional[bytes], Optional[str]]:
+# --- AUTH / CLIENT CREATION ---
+def get_gcs_client() -> storage.Client:
     """
-    Try to download the image bytes from GCS.
-    Handles .jpg/.jpeg fallback and optional folder prefix.
-    Returns (bytes, blob_path_used) or (None, None) if not found.
+    Uses st.secrets['gcp_service_account'] if available (Streamlit Cloud),
+    else falls back to default credentials (ADC) for local/dev environments.
     """
-    bucket = gcs.bucket(BUCKET_NAME)
+    if "gcp_service_account" in st.secrets:
+        creds = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"]
+        )
+        return storage.Client(project=PROJECT_ID, credentials=creds)
+    # Fallback to ADC (works locally if you've run `gcloud auth application-default login`)
+    return storage.Client(project=PROJECT_ID)
 
-    # try exact name first
-    candidates = [filename]
-    # extension fallbacks
-    base, dot, ext = filename.rpartition(".")
-    if dot:
-        if ext.lower() != "jpg":
-            candidates.append(f"{base}.jpg")
-        if ext.lower() != "jpeg":
-            candidates.append(f"{base}.jpeg")
-        if ext.lower() != "png":
-            candidates.append(f"{base}.png")
+gcs: storage.Client = get_gcs_client()
+bucket = gcs.bucket(BUCKET_NAME)
+
+# --- DOWNLOAD HELPER ---
+def download_image_bytes_from_gcs(
+    filename: str,
+    folder_prefix: Optional[str] = FOLDER_PREFIX
+) -> Tuple[Optional[bytes], Optional[str]]:
+    """
+    Try to fetch an image by filename from GCS. Looks inside `folder_prefix` first,
+    then at bucket root. Also tries common extension variants (.jpg/.jpeg/.png).
+
+    Returns: (image_bytes, blob_path_used) or (None, None) if not found.
+    """
+    if not filename:
+        return None, None
+
+    # Normalize: strip any leading path or gs:// parts the caller might pass
+    fname = filename.split("/")[-1].strip()
+
+    # Try common extension variants if no dot present or unknown extension
+    base, dot, ext = fname.rpartition(".")
+    if dot == "":
+        candidates = [f"{fname}.jpg", f"{fname}.jpeg", f"{fname}.png"]
     else:
-        candidates += [f"{filename}.jpg", f"{filename}.jpeg"]
+        ext_lower = ext.lower()
+        swap_exts = []
+        if ext_lower not in {"jpg", "jpeg", "png"}:
+            # unknown ext → try safe fallbacks
+            swap_exts = [f"{base}.jpg", f"{base}.jpeg", f"{base}.png"]
+        else:
+            # also try sibling image types as fallbacks
+            if ext_lower == "jpg":
+                swap_exts = [f"{base}.jpeg", f"{base}.png"]
+            elif ext_lower == "jpeg":
+                swap_exts = [f"{base}.jpg", f"{base}.png"]
+            elif ext_lower == "png":
+                swap_exts = [f"{base}.jpg", f"{base}.jpeg"]
+        candidates = [fname] + swap_exts
 
-    # apply optional prefix
-    def with_prefix(name: str) -> str:
-        return f"{BUCKET_PREFIX.rstrip('/')}/{name.lstrip('/')}" if BUCKET_PREFIX else name
+    search_prefixes = []
+    if folder_prefix and folder_prefix.strip():
+        search_prefixes.append(folder_prefix.strip().rstrip("/"))
+    # also try bucket root as a fallback
+    search_prefixes.append("")
 
-    for name in candidates:
-        blob_path = with_prefix(name)
-        blob = bucket.blob(blob_path)
-        try:
-            data = blob.download_as_bytes()
-            return data, blob_path
-        except NotFound:
-            continue
+    # direct lookups first (fast path)
+    for cand in candidates:
+        for pref in search_prefixes:
+            blob_path = f"{pref}/{cand}" if pref else cand
+            blob = bucket.get_blob(blob_path)
+            if blob is not None:
+                return blob.download_as_bytes(), blob_path
+
+    # slower fallback: list and try to match
+    # (useful if filenames differ by case or have spaces)
+    for pref in search_prefixes:
+        prefix = f"{pref}/" if pref else ""
+        # limit listing breadth by using the folder prefix only
+        for blob in gcs.list_blobs(BUCKET_NAME, prefix=prefix):
+            if blob.name.split("/")[-1].lower() == fname.lower():
+                return blob.download_as_bytes(), blob.name
+
     return None, None
+
 
 # =========================
 # Foe time related query
